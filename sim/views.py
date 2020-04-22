@@ -3,29 +3,38 @@ from django.http import HttpResponse, JsonResponse
 from sim.models import Forum, Embedding
 from sim.serializers import ForumSerializer
 from rest_framework.parsers import JSONParser
+from django.views.decorators.csrf import csrf_exempt
 
 
 from sentence_transformers import SentenceTransformer
 import scipy.spatial
 
+
+def createEmb(pk):
+	try:
+		forum = Forum.objects.get(pk = pk)
+	except Forum.DoesNotExist:
+		return [[]]
+	forumVector = [[]]
+	if forum.embedding_set.count() == 0:
+		model = SentenceTransformer('distiluse-base-multilingual-cased')
+		forumVector = model.encode([forum.body])
+		emb = zip(range(512), forumVector[0])
+		for idx, val in emb:
+			forum.embedding_set.create(index = idx, value = val)
+	else:
+		embs = forum.embedding_set.all().order_by('index')
+		for em in embs:
+			forumVector[0].append(em.value)
+	return forumVector
+
+@csrf_exempt
 def simForums(request, pk):
+	print("1")
 	if request.method == 'GET':
-		try:
-			forum = Forum.objects.get(pk = pk)
-		except Forum.DoesNotExist:
+		forumVector = createEmb(pk)
+		if len(forumVector[0]) == 0:
 			return HttpResponse(status=404)
-		if forum.embedding_set.count() == 0:
-			model = SentenceTransformer('distiluse-base-multilingual-cased')
-			forumVector = model.encode([forum.body])
-			emb = zip(range(512), forumVector[0])
-			for idx, val in emb:
-				forum.embedding_set.create(index = idx, value = val)
-		else:
-			forumVector = [[]]
-			embs = forum.embedding_set.all().order_by('index')
-			for em in embs:
-				forumVector[0].append(em.value)
-		
 		otherForumVectors = []
 		counter = 0
 		forums = Forum.objects.exclude(pk = pk).order_by('id')
@@ -48,4 +57,18 @@ def simForums(request, pk):
 		serializer = ForumSerializer(selectedForums, many = True)
 		return JsonResponse(serializer.data, safe = False)
 	else:
-		return httpResponse(status = 405);
+		return HttpResponse(status = 405)
+
+@csrf_exempt
+def insertEmbs(request, pk):
+	print("1")
+	if request.method == 'POST':
+		print("2")
+		forumVector = createEmb(pk)
+		print("3")
+		if len(forumVector) == 0:
+			return HttpResponse(status = 404)
+		else:
+			return HttpResponse(status = 201)
+	else:
+		return HttpResponse(status = 405)
