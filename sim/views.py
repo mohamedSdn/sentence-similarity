@@ -30,7 +30,6 @@ def createEmb(pk):
 
 @csrf_exempt
 def simForums(request, pk):
-	print("1")
 	if request.method == 'GET':
 		forumVector = createEmb(pk)
 		if len(forumVector[0]) == 0:
@@ -50,10 +49,11 @@ def simForums(request, pk):
 		selectedForums = []
 		counter = 0
 		for key, value in finalResults:
-			if counter == 3:
+			if counter == 3 or value > .5:
 				break
 			selectedForums.append(key)
 			counter += 1
+		print(selectedForums)
 		serializer = ForumSerializer(selectedForums, many = True)
 		return JsonResponse(serializer.data, safe = False)
 	else:
@@ -61,11 +61,9 @@ def simForums(request, pk):
 
 @csrf_exempt
 def insertEmbs(request, pk):
-	print("1")
 	if request.method == 'POST':
-		print("2")
+		print("1")
 		forumVector = createEmb(pk)
-		print("3")
 		if len(forumVector) == 0:
 			return HttpResponse(status = 404)
 		else:
