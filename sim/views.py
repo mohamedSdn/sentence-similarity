@@ -1,4 +1,3 @@
-
 from django.http import HttpResponse, JsonResponse
 from sim.models import Forum, Embedding
 from sim.serializers import ForumSerializer
@@ -18,7 +17,7 @@ def createEmb(pk):
 	forumVector = [[]]
 	if forum.embedding_set.count() == 0:
 		model = SentenceTransformer('distiluse-base-multilingual-cased')
-		forumVector = model.encode([forum.body])
+		forumVector = model.encode([forum.title])
 		emb = zip(range(512), forumVector[0])
 		for idx, val in emb:
 			forum.embedding_set.create(index = idx, value = val)
@@ -38,11 +37,14 @@ def simForums(request, pk):
 		counter = 0
 		forums = Forum.objects.exclude(pk = pk).order_by('id')
 		for frm in forums:
-			otherForumVectors.append([])
 			embs = frm.embedding_set.all().order_by('index')
-			for em in embs:
-				otherForumVectors[counter].append(em.value)
-			counter += 1
+			if len(embs) == 512:
+				otherForumVectors.append([])
+				for em in embs:
+					otherForumVectors[counter].append(em.value)
+				counter += 1
+		if len(otherForumVectors) == 0:
+			return HttpResponse(status = 404)
 		distances = scipy.spatial.distance.cdist(forumVector, otherForumVectors, "correlation")[0]
 		finalResults = zip(forums, distances)
 		finalResults = sorted(finalResults, key=lambda x: x[1])
@@ -53,7 +55,6 @@ def simForums(request, pk):
 				break
 			selectedForums.append(key)
 			counter += 1
-		print(selectedForums)
 		serializer = ForumSerializer(selectedForums, many = True)
 		return JsonResponse(serializer.data, safe = False)
 	else:
@@ -62,7 +63,6 @@ def simForums(request, pk):
 @csrf_exempt
 def insertEmbs(request, pk):
 	if request.method == 'POST':
-		print("1")
 		forumVector = createEmb(pk)
 		if len(forumVector) == 0:
 			return HttpResponse(status = 404)
