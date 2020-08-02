@@ -3,36 +3,23 @@ from sim.models import Forum, Embedding
 from sim.serializers import ForumSerializer
 from rest_framework.parsers import JSONParser
 from django.views.decorators.csrf import csrf_exempt
+import threading
 
 
 from sentence_transformers import SentenceTransformer
 import scipy.spatial
 
-
-def createEmb(pk):
-	try:
-		forum = Forum.objects.get(pk = pk)
-	except Forum.DoesNotExist:
-		return [[]]
-	forumVector = [[]]
-	if forum.embedding_set.count() == 0:
-		model = SentenceTransformer('distiluse-base-multilingual-cased')
-		forumVector = model.encode([forum.title])
-		emb = zip(range(512), forumVector[0])
-		for idx, val in emb:
-			forum.embedding_set.create(index = idx, value = val)
-	else:
-		embs = forum.embedding_set.all().order_by('index')
-		for em in embs:
-			forumVector[0].append(em.value)
-	return forumVector
-
 @csrf_exempt
 def simForums(request, pk):
 	if request.method == 'GET':
-		forumVector = createEmb(pk)
+		forum = getForum(pk)
+		if forum == -1:
+			return HttpResponse(status = 404)
+		forumVector = getForumEmbeddings(forum)
 		if len(forumVector[0]) == 0:
-			return HttpResponse(status=404)
+			t1 = threading.Thread(target = doInThread, args = [forum])
+			t1.start()
+			return HttpResponse(status = 409)
 		otherForumVectors = []
 		counter = 0
 		forums = Forum.objects.exclude(pk = pk).order_by('id')
@@ -63,10 +50,37 @@ def simForums(request, pk):
 @csrf_exempt
 def insertEmbs(request, pk):
 	if request.method == 'POST':
-		forumVector = createEmb(pk)
-		if len(forumVector) == 0:
+		forum = getForum(pk)
+		if forum == -1:
 			return HttpResponse(status = 404)
 		else:
-			return HttpResponse(status = 201)
+			t1 = threading.Thread(target = doInThread, args = [forum])
+			t1.start()
+			return HttpResponse(status = 200)
 	else:
 		return HttpResponse(status = 405)
+
+
+def doInThread(forum):
+	if forum.embedding_set.count() == 0:
+		model = SentenceTransformer('distiluse-base-multilingual-cased')
+		forumVector = model.encode([forum.title])
+		emb = zip(range(512), forumVector[0])
+		for idx, val in emb:
+			forum.embedding_set.create(index = idx, value = val)
+
+
+def getForum(pk):
+	try:
+		forum = Forum.objects.get(pk = pk)
+		return forum
+	except Forum.DoesNotExist:
+		return -1
+
+def getForumEmbeddings(forum):
+	forumVector = [[]]
+	embs = forum.embedding_set.all().order_by('index')
+	for em in embs:
+		forumVector[0].append(em.value)
+	return forumVector
+		
