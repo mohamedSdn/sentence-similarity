@@ -66,8 +66,15 @@ def doInThread(forum):
 		model = SentenceTransformer('distiluse-base-multilingual-cased')
 		forumVector = model.encode([forum.title])
 		emb = zip(range(512), forumVector[0])
-		for idx, val in emb:
-			forum.embedding_set.create(index = idx, value = val)
+		Embedding.objects.bulk_create(
+			[
+				Embedding(
+					question = forum,
+					index = em[0],
+					value = em[1]
+				) for em in emb
+			]
+		)
 
 
 def getForum(pk):
