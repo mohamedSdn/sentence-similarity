@@ -2,9 +2,8 @@ from django.db import models
 
 class Equipment(models.Model):
     id = models.BigAutoField(primary_key=True)
-    mark = models.CharField(max_length = 30)
-    type = models.CharField(max_length = 30)
     model = models.CharField(max_length = 30)
+    commissioned_on = models.DateTimeField()
     class Meta:
         managed = False
         db_table = 'equipments'
@@ -46,3 +45,12 @@ class Failure(models.Model):
     class Meta:
         managed = False
         db_table = 'failures'
+
+class Error(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    equipment = models.ForeignKey(Equipment, on_delete=models.CASCADE)
+    error_code = models.CharField(max_length = 10)
+    dateTime = models.DateTimeField(blank=True, null=True)
+    class Meta:
+        managed = False
+        db_table = 'errors'
