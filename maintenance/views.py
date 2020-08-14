@@ -1,10 +1,12 @@
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from maintenance.models import Equipment, Telemetry, Maintenance, Failure, Error
+import category_encoders as ce
 import pandas as pd
 import numpy as np
 from datetime import datetime
 import pickle
+import os
 
 @csrf_exempt
 def predict(request):
@@ -30,19 +32,23 @@ def createFeatures():
 	).values('equipment_id', 'model', 'commissioned_on')))
 	errors = pd.DataFrame(list(Error.objects.values('dateTime', 'equipment_id', 'error_code')))
 	if not equipments.empty:
-		equipments['model'] = equipments['model'].astype('category')
+		equipments['model'] = equipments['model'].astype('str')
 		equipments['commissioned_on'] = pd.to_datetime(equipments['commissioned_on'], format="%Y-%m-%d %H:%M:%S")
 		equipments['commissioned_on'] = pd.DatetimeIndex(equipments['commissioned_on']).tz_localize(None)
 	if not telemetry.empty:
 		telemetry['dateTime'] = pd.to_datetime(telemetry['dateTime'], format="%Y-%m-%d %H:%M:%S")
+		telemetry['dateTime'] = pd.DatetimeIndex(telemetry['dateTime']).tz_localize(None)
 	if not maintenances.empty:
 		maintenances['dateTime'] = pd.to_datetime(maintenances['dateTime'], format="%Y-%m-%d %H:%M:%S")
+		maintenances['dateTime'] = pd.DatetimeIndex(maintenances['dateTime']).tz_localize(None)
 		maintenances['comp'] = maintenances['comp'].astype('category')
 	if not failures.empty:
 		failures['dateTime'] = pd.to_datetime(failures['dateTime'], format="%Y-%m-%d %H:%M:%S")
+		failures['dateTime'] = pd.DatetimeIndex(failures['dateTime']).tz_localize(None)
 		failures['comp'] = failures['comp'].astype('category')
 	if not errors.empty:
 		errors['dateTime'] = pd.to_datetime(errors['dateTime'], format="%Y-%m-%d %H:%M:%S")
+		errors['dateTime'] = pd.DatetimeIndex(errors['dateTime']).tz_localize(None)
 		errors['error_code'] = errors['error_code'].astype('category')
 	
 	print("-----")
@@ -143,8 +149,10 @@ def createFeatures():
 	
 	
 	temp = []
-	fields = ['error%d' % i for i in range(1, len(error_count.columns) - 1)]
+	fields = ['error%d' % i for i in range(1, 6)]
 	for col in fields:
+		if col not in error_count:
+			error_count[col] = [0] * len(error_count.index)
 		temp.append(pd.pivot_table(error_count,
 								index='dateTime',
 								columns='equipment_id',
@@ -167,36 +175,54 @@ def createFeatures():
 	#3.maintenance features
 	comp_rep = pd.get_dummies(maintenances.set_index('dateTime')).reset_index()
 	comp_rep.columns = [em[5:] if em.startswith('comp') else em for em in comp_rep.columns]
+	components = ['comp%d' % i for i in range(1, 5)]
+	for comp in components:
+		if comp not in comp_rep:
+			comp_rep[comp] = [0.0] * len(comp_rep.index)
 	comp_rep = comp_rep.groupby(['equipment_id', 'dateTime']).sum().reset_index()
 	comp_rep = telemetry[['dateTime', 'equipment_id']].merge(comp_rep,
 														on=['dateTime', 'equipment_id'],
 														how='outer').fillna(0).sort_values(by=['equipment_id', 'dateTime'])
-	components = [comp for comp in comp_rep.columns[2:]]
 	for comp in components:
 		comp_rep.loc[comp_rep[comp] < 1, comp] = None
 		comp_rep.loc[-comp_rep[comp].isnull(), comp] = comp_rep.loc[-comp_rep[comp].isnull(), 'dateTime']
+		comp_rep[comp] = pd.to_datetime(comp_rep[comp], format="%Y-%m-%d %H:%M:%S")
+		comp_rep[comp] = pd.DatetimeIndex(comp_rep[comp]).tz_localize(None)
 		comp_rep[comp] = comp_rep[comp].fillna(method='ffill')
 	for comp in components:
 		comp_rep[comp] = (comp_rep['dateTime'] - comp_rep[comp]) / np.timedelta64(1, 'D')
+		comp_rep[comp] = comp_rep[comp].fillna(100.0)
 	
 	print("**********")
 	print(comp_rep.head())
 	
 	#4.equipments features
 	equipments.columns = ['equipment_id', 'model', 'age']
+	
 	now = datetime.now()
 	equipments['age'] = (now - equipments['age']) / np.timedelta64(1, 'Y')
-	
+
+	x = equipments['model']
+	y = equipments.drop('model', axis=1)
+
+	hash = ce.HashingEncoder(cols='model', n_components=6)
+	z = hash.fit_transform(x, y['age'])
+
+	equipments = pd.concat([z, y], axis=1)
+
 	print("**********")
 	print(equipments.head())
-	
+
 	#5.combine all features
 	final_feat = telemetry_feat.merge(error_count, on=['dateTime', 'equipment_id'], how='left')
 	final_feat = final_feat.merge(comp_rep, on=['dateTime', 'equipment_id'], how='left')
 	final_feat = final_feat.merge(equipments, on=['equipment_id'], how='left')
-	
+
 	print("+-+-+-+-+-+-+-+-+")
 	print(final_feat.head())
+	
+	if(final_feat.empty):
+		return False
 	
 	#6.label construction
 	labeled_features = final_feat.merge(failures, on=['dateTime', 'equipment_id'], how='left')
@@ -211,20 +237,22 @@ def createFeatures():
 	print("+-+-+-+-+-+-+-+-+")
 	print(labeled_features_for_prediction.head())
 	
-	#7.get model
-	# import os
-	# module_dir = os.path.dirname(__file__)
-	# file_path = os.path.join(module_dir, 'prediction_model.pkl')
+	#7.get model	
+	module_dir = os.path.dirname(__file__)
+	file_path = os.path.join(module_dir, 'prediction_model.pkl')
 	
-	# gradientBoostingClassifier = pickle.load(open(file_path, 'rb'))
+	gradientBoostingClassifier = pickle.load(open(file_path, 'rb'))
 	
 	#8.final results
-	# labeled_features['predicted_failure'] = gradientBoostingClassifier.predict(labeled_features_for_prediction)
+	labeled_features['predicted_failure'] = gradientBoostingClassifier.predict(labeled_features_for_prediction)
 	
-	# labeled_features = labeled_features.loc[labeled_features['predicted_failure'] != 'none']
-	# print("@@@@@@@@@@@@ final results")
-	# print(labeled_features)
+	print("@@@@@@@@@@@@ final results")
+	print(labeled_features)
 	
+	labeled_features = labeled_features.loc[labeled_features['predicted_failure'] != 'none']
+	print("@@@@@@@@@@@@ final results")
+	print(labeled_features)
+	return True
 	
 	
 	
