@@ -11,8 +11,13 @@ import os
 @csrf_exempt
 def predict(request):
 	if request.method == 'GET':
-		createFeatures()
-		temp = 5
+		temp = createFeatures()
+		if(temp == -1):
+			return HttpResponse(status = 503)
+		elif(temp == -2):
+			return HttpResponse(status = 400)
+		elif(temp in [0, 1, 2, 3, 4]):
+			temp = []
 		return JsonResponse(temp, safe = False)
 	else:
 		return HttpResponse(status = 405)
@@ -90,56 +95,42 @@ def createFeatures():
 	telemetry_sd_3h.reset_index(inplace=True)
 	
 	#1.3.mean every 24h
-	
-	telemetry_mean_24h = telemetry_mean_3h
-	
-	# temp = []
-	# for col in fields:
-		# temp.append(pd.pivot_table(telemetry,
-									# index='dateTime',
-									# columns='equipment_id',
-									# values=col).rolling(window=24,center=False).mean().resample('3H',
-																			# closed='left',
-																			# label='right').first().unstack())
-	# telemetry_mean_24h = pd.concat(temp, axis=1)
-	# telemetry_mean_24h.columns = [i + 'mean_24h' for i in fields]
-	# telemetry_mean_24h.reset_index(inplace=True)
-	# telemetry_mean_24h = telemetry_mean_24h.loc[-telemetry_mean_24h['voltmean_24h'].isnull()]
+	temp = []
+	for col in fields:
+		temp.append(pd.pivot_table(telemetry,
+									index='dateTime',
+									columns='equipment_id',
+									values=col).rolling(window=24,center=False).mean().resample('3H',
+																			closed='left',
+																			label='right').first().unstack())
+	telemetry_mean_24h = pd.concat(temp, axis=1)
+	telemetry_mean_24h.columns = [i + 'mean_24h' for i in fields]
+	telemetry_mean_24h.reset_index(inplace=True)
+	telemetry_mean_24h = telemetry_mean_24h.loc[-telemetry_mean_24h['voltmean_24h'].isnull()]
 	
 	#1.4.std every 24h
-	
-	telemetry_sd_24h = telemetry_sd_3h
-	
-	# temp = []
-	# for col in fields:
-		# temp.append(pd.pivot_table(telemetry,
-									# index='dateTime',
-									# columns='equipment_id',
-									# values=col).rolling(window=24,center=False).std().resample('3H',
-																			# closed='left',
-																			# label='right').first().unstack())
-	# telemetry_sd_24h = pd.concat(temp, axis=1)
-	# telemetry_sd_24h.columns = [i + 'sd_24h' for i in fields]
-	# telemetry_sd_24h = telemetry_sd_24h.loc[-telemetry_sd_24h['voltsd_24h'].isnull()]
-	# telemetry_sd_24h.reset_index(inplace=True)
+	temp = []
+	for col in fields:
+		temp.append(pd.pivot_table(telemetry,
+									index='dateTime',
+									columns='equipment_id',
+									values=col).rolling(window=24,center=False).std().resample('3H',
+																			closed='left',
+																			label='right').first().unstack())
+	telemetry_sd_24h = pd.concat(temp, axis=1)
+	telemetry_sd_24h.columns = [i + 'sd_24h' for i in fields]
+	telemetry_sd_24h = telemetry_sd_24h.loc[-telemetry_sd_24h['voltsd_24h'].isnull()]
+	telemetry_sd_24h.reset_index(inplace=True)
 	
 	#1.5.combine the last four features
-	
-	print("//////////")
-	print(telemetry_mean_3h)
-	print(telemetry_sd_3h)
-	print(telemetry_mean_24h)
-	print(telemetry_sd_24h)
-	print("//////////")
-	
 	telemetry_feat = pd.concat([telemetry_mean_3h,
 								telemetry_sd_3h.iloc[:, 2:7],
 								telemetry_mean_24h.iloc[:, 2:7],
 								telemetry_sd_24h.iloc[:, 2:7]],
 								axis=1).dropna()
 	
-	print("**********")
-	print(telemetry_feat.head())
+	if(telemetry_feat.empty):
+		return 0
 	
 	#2.errors features
 	error_count = pd.get_dummies(errors.set_index('dateTime')).reset_index()
@@ -150,27 +141,30 @@ def createFeatures():
 	
 	temp = []
 	fields = ['error%d' % i for i in range(1, 6)]
+	# for col in fields:
+		# if col not in error_count:
+			# error_count[col] = [0] * len(error_count.index)
+		# temp.append(pd.pivot_table(error_count,
+								# index='dateTime',
+								# columns='equipment_id',
+								# values=col).resample('3H', closed='left', label='right').first().unstack())
 	for col in fields:
 		if col not in error_count:
 			error_count[col] = [0] * len(error_count.index)
 		temp.append(pd.pivot_table(error_count,
-								index='dateTime',
-								columns='equipment_id',
-								values=col).resample('3H', closed='left', label='right').first().unstack())
-	# for col in fields:
-		# temp.append(pd.pivot_table(error_count,
-									# index='dateTime',
-									# columns='equipment_id',
-									# values=col).rolling(window=24,center=False).sum().resample('3H',
-																								# closed='left',
-																								# label='right').first().unstack())
+									index='dateTime',
+									columns='equipment_id',
+									values=col).rolling(window=24,center=False).sum().resample('3H',
+																								closed='left',
+																								label='right').first().unstack())
 	error_count = pd.concat(temp, axis=1)
 	error_count.columns = [i + 'count' for i in fields]
 	error_count.reset_index(inplace=True)
 	error_count = error_count.dropna()
-		
-	print("**********")
-	print(error_count.head())
+	error_count = error_count.loc[:, ['equipment_id', 'dateTime', 'error1count', 'error2count', 'error3count', 'error4count', 'error5count']]
+	
+	if(error_count.empty):
+		return 1
 	
 	#3.maintenance features
 	comp_rep = pd.get_dummies(maintenances.set_index('dateTime')).reset_index()
@@ -193,8 +187,10 @@ def createFeatures():
 		comp_rep[comp] = (comp_rep['dateTime'] - comp_rep[comp]) / np.timedelta64(1, 'D')
 		comp_rep[comp] = comp_rep[comp].fillna(100.0)
 	
-	print("**********")
-	print(comp_rep.head())
+	comp_rep = comp_rep.loc[:, ['equipment_id', 'dateTime', 'comp1', 'comp2', 'comp3', 'comp4']]
+	
+	if(comp_rep.empty):
+		return 2
 	
 	#4.equipments features
 	equipments.columns = ['equipment_id', 'model', 'age']
@@ -209,57 +205,41 @@ def createFeatures():
 	z = hash.fit_transform(x, y['age'])
 
 	equipments = pd.concat([z, y], axis=1)
-
-	print("**********")
-	print(equipments.head())
+	
+	if(equipments.empty):
+		return 3
 
 	#5.combine all features
 	final_feat = telemetry_feat.merge(error_count, on=['dateTime', 'equipment_id'], how='left')
 	final_feat = final_feat.merge(comp_rep, on=['dateTime', 'equipment_id'], how='left')
 	final_feat = final_feat.merge(equipments, on=['equipment_id'], how='left')
-
-	print("+-+-+-+-+-+-+-+-+")
-	print(final_feat.head())
 	
 	if(final_feat.empty):
-		return False
+		return 4
 	
 	#6.label construction
 	labeled_features = final_feat.merge(failures, on=['dateTime', 'equipment_id'], how='left')
 	labeled_features = labeled_features.bfill(axis=1, limit=7)
 	labeled_features = labeled_features.fillna('none')
 	
-	print("+-+-+-+-+-+-+-+-+")
-	print(labeled_features.head())
-	
 	labeled_features_for_prediction = pd.get_dummies(labeled_features.drop(['dateTime', 'equipment_id', 'comp'], 1))
-	
-	print("+-+-+-+-+-+-+-+-+")
-	print(labeled_features_for_prediction.head())
 	
 	#7.get model	
 	module_dir = os.path.dirname(__file__)
 	file_path = os.path.join(module_dir, 'prediction_model.pkl')
 	
-	gradientBoostingClassifier = pickle.load(open(file_path, 'rb'))
+	try:
+		gradientBoostingClassifier = pickle.load(open(file_path, 'rb'))
+	except:
+		return -1
 	
 	#8.final results
-	labeled_features['predicted_failure'] = gradientBoostingClassifier.predict(labeled_features_for_prediction)
+	try:
+		labeled_features['predicted_failure'] = gradientBoostingClassifier.predict(labeled_features_for_prediction)
+	except:
+		return -2
 	
-	print("@@@@@@@@@@@@ final results")
+	labeled_features = labeled_features.loc[:, ['equipment_id', 'predicted_failure']].values.tolist()
+	
 	print(labeled_features)
-	
-	labeled_features = labeled_features.loc[labeled_features['predicted_failure'] != 'none']
-	print("@@@@@@@@@@@@ final results")
-	print(labeled_features)
-	return True
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
+	return labeled_features
