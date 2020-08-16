@@ -40,13 +40,19 @@ def createFeatures():
 		equipments['model'] = equipments['model'].astype('str')
 		equipments['commissioned_on'] = pd.to_datetime(equipments['commissioned_on'], format="%Y-%m-%d %H:%M:%S")
 		equipments['commissioned_on'] = pd.DatetimeIndex(equipments['commissioned_on']).tz_localize(None)
+	else:
+		return 3
 	if not telemetry.empty:
 		telemetry['dateTime'] = pd.to_datetime(telemetry['dateTime'], format="%Y-%m-%d %H:%M:%S")
 		telemetry['dateTime'] = pd.DatetimeIndex(telemetry['dateTime']).tz_localize(None)
+	else:
+		return 0
 	if not maintenances.empty:
 		maintenances['dateTime'] = pd.to_datetime(maintenances['dateTime'], format="%Y-%m-%d %H:%M:%S")
 		maintenances['dateTime'] = pd.DatetimeIndex(maintenances['dateTime']).tz_localize(None)
 		maintenances['comp'] = maintenances['comp'].astype('category')
+	else:
+		return 2
 	if not failures.empty:
 		failures['dateTime'] = pd.to_datetime(failures['dateTime'], format="%Y-%m-%d %H:%M:%S")
 		failures['dateTime'] = pd.DatetimeIndex(failures['dateTime']).tz_localize(None)
@@ -55,17 +61,8 @@ def createFeatures():
 		errors['dateTime'] = pd.to_datetime(errors['dateTime'], format="%Y-%m-%d %H:%M:%S")
 		errors['dateTime'] = pd.DatetimeIndex(errors['dateTime']).tz_localize(None)
 		errors['error_code'] = errors['error_code'].astype('category')
-	
-	print("-----")
-	print(equipments.head())
-	print("-----")
-	print(telemetry.head())
-	print("-----")
-	print(maintenances.head())
-	print("-----")
-	print(failures.head())
-	print("-----")
-	print(errors.head())
+	else:
+		return 1
 	
 	#calculating features
 	
@@ -218,10 +215,12 @@ def createFeatures():
 		return 4
 	
 	#6.label construction
-	labeled_features = final_feat.merge(failures, on=['dateTime', 'equipment_id'], how='left')
-	labeled_features = labeled_features.bfill(axis=1, limit=7)
-	labeled_features = labeled_features.fillna('none')
-	
+	if not failures.empty:
+		labeled_features = final_feat.merge(failures, on=['dateTime', 'equipment_id'], how='left')
+		labeled_features = labeled_features.bfill(axis=1, limit=7)
+		labeled_features = labeled_features.fillna('none')
+	else:
+		labeled_features['comp'] = 'none'
 	labeled_features_for_prediction = pd.get_dummies(labeled_features.drop(['dateTime', 'equipment_id', 'comp'], 1))
 	
 	#7.get model	
@@ -239,7 +238,7 @@ def createFeatures():
 	except:
 		return -2
 	
-	labeled_features = labeled_features.loc[:, ['equipment_id', 'predicted_failure']].values.tolist()
-	
-	print(labeled_features)
+	# labeled_features = labeled_features.loc[:, ['equipment_id', 'predicted_failure']].values.tolist()
+	labeled_features = labeled_features.loc[labeled_features['predicted_failure'] != 'none', ['equipment_id', 'predicted_failure']].values.tolist()
 	return labeled_features
+	
