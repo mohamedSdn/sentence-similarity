@@ -32,12 +32,16 @@ def createFeatures():
 		select={
 			'equipment_id': 'id',
 			'model': 'model',
-			'commissioned_on': 'commissioned_on'
+			'commissioned_on': 'commissioned_on',
+			'code': 'code'
 		}
-	).values('equipment_id', 'model', 'commissioned_on')))
+	).values('equipment_id', 'model', 'commissioned_on', 'code')))
 	errors = pd.DataFrame(list(Error.objects.values('dateTime', 'equipment_id', 'error_code')))
+	print("--------")
+	print(equipments.head())
 	if not equipments.empty:
 		equipments['model'] = equipments['model'].astype('str')
+		equipments['code'] = equipments['code'].astype('str')
 		equipments['commissioned_on'] = pd.to_datetime(equipments['commissioned_on'], format="%Y-%m-%d %H:%M:%S")
 		equipments['commissioned_on'] = pd.DatetimeIndex(equipments['commissioned_on']).tz_localize(None)
 	else:
@@ -63,7 +67,6 @@ def createFeatures():
 		errors['error_code'] = errors['error_code'].astype('category')
 	else:
 		return 1
-	
 	#calculating features
 	
 	#1.telemetry features
@@ -190,7 +193,7 @@ def createFeatures():
 		return 2
 	
 	#4.equipments features
-	equipments.columns = ['equipment_id', 'model', 'age']
+	equipments.columns = ['equipment_id', 'model', 'age', 'code']
 	
 	now = datetime.now()
 	equipments['age'] = (now - equipments['age']) / np.timedelta64(1, 'Y')
@@ -221,9 +224,9 @@ def createFeatures():
 		labeled_features = labeled_features.fillna('none')
 	else:
 		labeled_features['comp'] = 'none'
-	labeled_features_for_prediction = pd.get_dummies(labeled_features.drop(['dateTime', 'equipment_id', 'comp'], 1))
+	labeled_features_for_prediction = pd.get_dummies(labeled_features.drop(['dateTime', 'equipment_id', 'comp', 'code'], 1))
 	
-	#7.get model	
+	#7.get model
 	module_dir = os.path.dirname(__file__)
 	file_path = os.path.join(module_dir, 'prediction_model.pkl')
 	
@@ -239,6 +242,6 @@ def createFeatures():
 		return -2
 	
 	# labeled_features = labeled_features.loc[:, ['equipment_id', 'predicted_failure']].values.tolist()
-	labeled_features = labeled_features.loc[labeled_features['predicted_failure'] != 'none', ['equipment_id', 'predicted_failure']].values.tolist()
+	labeled_features = labeled_features.loc[labeled_features['predicted_failure'] != 'none', ['equipment_id', 'code', 'predicted_failure']].values.tolist()
 	return labeled_features
 	

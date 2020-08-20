@@ -4,6 +4,7 @@ class Equipment(models.Model):
     id = models.BigAutoField(primary_key=True)
     model = models.CharField(max_length = 30)
     commissioned_on = models.DateTimeField()
+    code = models.CharField(max_length = 30)
     class Meta:
         managed = False
         db_table = 'equipments'
