@@ -23,9 +23,11 @@ def simForums(request, pk):
 		otherForumVectors = []
 		counter = 0
 		forums = Forum.objects.exclude(pk = pk).order_by('id')
+		forums2 = []
 		for frm in forums:
 			embs = frm.embedding_set.all().order_by('index')
 			if len(embs) == 512:
+				forums2.append(frm)
 				otherForumVectors.append([])
 				for em in embs:
 					otherForumVectors[counter].append(em.value)
@@ -33,7 +35,7 @@ def simForums(request, pk):
 		if len(otherForumVectors) == 0:
 			return HttpResponse(status = 404)
 		distances = scipy.spatial.distance.cdist(forumVector, otherForumVectors, "correlation")[0]
-		finalResults = zip(forums, distances)
+		finalResults = zip(forums2, distances)
 		finalResults = sorted(finalResults, key=lambda x: x[1])
 		selectedForums = []
 		counter = 0
