@@ -64,19 +64,22 @@ def insertEmbs(request, pk):
 
 
 def doInThread(forum):
-	if forum.embedding_set.count() == 0:
-		model = SentenceTransformer('distiluse-base-multilingual-cased')
-		forumVector = model.encode([forum.title])
-		emb = zip(range(512), forumVector[0])
-		Embedding.objects.bulk_create(
-			[
-				Embedding(
-					question = forum,
-					index = em[0],
-					value = em[1]
-				) for em in emb
-			]
-		)
+	print(111)
+	model = SentenceTransformer('distiluse-base-multilingual-cased')
+	forumVector = model.encode([forum.title])
+	emb = zip(range(512), forumVector[0])
+	print(222)
+	Embedding.objects.filter(question_id = forum.id).delete()
+	print(333)
+	Embedding.objects.bulk_create(
+		[
+			Embedding(
+			question = forum,
+			index = em[0],
+			value = em[1]
+			) for em in emb
+		]
+	)
 
 
 def getForum(pk):
