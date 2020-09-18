@@ -37,8 +37,6 @@ def createFeatures():
 		}
 	).values('equipment_id', 'model', 'commissioned_on', 'code')))
 	errors = pd.DataFrame(list(Error.objects.values('dateTime', 'equipment_id', 'error_code')))
-	print("--------")
-	print(equipments.head())
 	if not equipments.empty:
 		equipments['model'] = equipments['model'].astype('str')
 		equipments['code'] = equipments['code'].astype('str')
@@ -241,7 +239,6 @@ def createFeatures():
 	except:
 		return -2
 	
-	# labeled_features = labeled_features.loc[:, ['equipment_id', 'predicted_failure']].values.tolist()
-	labeled_features = labeled_features.loc[labeled_features['predicted_failure'] != 'none', ['equipment_id', 'code', 'predicted_failure']].values.tolist()
+	labeled_features = labeled_features.loc[labeled_features['predicted_failure'] != 'none', ['equipment_id', 'code']].set_index("equipment_id").to_dict()
 	return labeled_features
 	
